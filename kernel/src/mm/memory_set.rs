@@ -5,7 +5,7 @@ use super::address::{align_down, is_aligned, phys_to_virt, virt_to_phys};
 use super::{MemFlags, PhysFrame, PAGE_SIZE};
 use crate::arch::{instructions, PageTable};
 use crate::config::{KERNEL_ASPACE_BASE, KERNEL_ASPACE_SIZE, USER_STACK_BASE, USER_STACK_SIZE};
-use crate::config::{MMIO_REGIONS, PHYS_MEMORY_END};
+use crate::config::{MMIO_REGIONS, PHYS_MEMORY_END, UPID_SHARE_MEM_VIRT_START, UPID_SHARE_MEM_PHYS_START, UPID_SHARE_MEM_SIZE};
 use crate::mm::{PhysAddr, VirtAddr};
 use crate::sync::LazyInit;
 
@@ -372,6 +372,20 @@ pub fn kernel_aspace<'a>() -> &'a MemorySet {
 
 pub fn init_kernel_aspace() {
     let mut ms = MemorySet::new_kernel();
+
+    #[cfg(feature = "rvm")]
+    #[cfg(feature = "uintr")]
+    {
+        println!("Mapping kernel memory: {:#x?} - {:#x?}", 0, (1 as usize)<<33);
+        // map kernel sections
+        ms.insert(MapArea::new_offset(
+            VirtAddr::new(UPID_SHARE_MEM_VIRT_START), 
+            PhysAddr::new(UPID_SHARE_MEM_PHYS_START), 
+            UPID_SHARE_MEM_SIZE, 
+            MemFlags::READ | MemFlags::WRITE
+        ));
+    }
+
     let mut map_range = |start: usize, end: usize, flags: MemFlags, name: &str| {
         println!("Mapping {}: [{:#x}, {:#x})", name, start, end);
         assert!(start < end);

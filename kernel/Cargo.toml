@@ -8,6 +8,7 @@ edition = "2021"
 
 [features]
 rvm = []
+uintr = []
 platform-pc = []
 platform-pc-rvm = []
 platform-qemu-virt-arm = []

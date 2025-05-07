@@ -6,6 +6,11 @@ use super::gdt::{UCODE64_SELECTOR, UDATA_SELECTOR};
 use crate::arch::instructions;
 use crate::mm::{PhysAddr, VirtAddr};
 use crate::percpu::PerCpu;
+#[cfg(feature = "uintr")]
+use crate::syscall::uintr::{UintrUittCtx, UintrUpidCtx};
+use alloc::sync::Arc;
+use crate::sync::Mutex;
+use alloc::boxed::Box;
 
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy)]
@@ -117,6 +122,18 @@ impl TrapFrame {
 #[repr(C)]
 #[derive(Debug, Default)]
 struct ContextSwitchFrame {
+    #[cfg(feature = "uintr")]
+    msr98a: u64,
+    #[cfg(feature = "uintr")]
+    msr989: u64,
+    #[cfg(feature = "uintr")]
+    msr988: u64,
+    #[cfg(feature = "uintr")]
+    msr987: u64,
+    #[cfg(feature = "uintr")]
+    msr986: u64,
+    #[cfg(feature = "uintr")]
+    uif: u64,
     r15: u64,
     r14: u64,
     r13: u64,
@@ -132,11 +149,31 @@ pub struct TaskContext {
     pub rsp: u64,
     pub fs_base: u64,
     pub cr3: u64,
+    #[cfg(feature = "uintr")]
+    pub uitt: Option<Arc<Mutex<UintrUittCtx>>>,
+    #[cfg(feature = "uintr")]
+    pub uitt_activated: bool,
+    #[cfg(feature = "uintr")]
+    pub upid_activated: bool,
+    #[cfg(feature = "uintr")]
+    pub uintr_upid_ctx: Option<Box<UintrUpidCtx>>,
 }
 
 impl TaskContext {
     pub const fn default() -> Self {
+        #[cfg(not(feature = "uintr"))]
         unsafe { core::mem::MaybeUninit::zeroed().assume_init() }
+        #[cfg(feature = "uintr")]
+        Self {
+            kstack_top: VirtAddr::new(0),
+            rsp: 0,
+            fs_base: 0,
+            cr3: 0,
+            uitt: None,  // 关键修复：确保 Option<Arc> 是 None 而不是非法值
+            uitt_activated: false,
+            upid_activated: false,
+            uintr_upid_ctx: None,
+        }
     }
 
     pub fn init(
@@ -159,6 +196,13 @@ impl TaskContext {
         }
         self.kstack_top = kstack_top;
         self.cr3 = page_table_root.as_usize() as u64;
+        
+        #[cfg(feature = "uintr")]
+        {self.uitt_activated = false;}
+        #[cfg(feature = "uintr")]
+        {self.upid_activated = false;}
+        #[cfg(feature = "uintr")]
+        {self.uintr_upid_ctx = None;}
     }
 
     pub fn switch_to(&mut self, next_ctx: &Self) {
@@ -175,6 +219,105 @@ impl TaskContext {
 }
 
 #[naked]
+#[cfg(feature = "uintr")]
+unsafe extern "C" fn context_switch(_current_stack: &mut u64, _next_stack: &u64) {
+    asm!(
+        "
+        push    rbp
+        push    rbx
+        push    r12
+        push    r13
+        push    r14
+        push    r15
+        
+        // Save UIF (TESTUI -> CF, then store CF in AL and push)
+        testui
+        setc    al
+        push    rax         // Push 8 bytes (but only AL is used)
+
+        // Save MSRs (5 x 64-bit = 40 bytes total)
+        sub     rsp, 40     // Allocate space for MSRs (5x8 bytes)
+        mov     ecx, 0x00000986
+        rdmsr
+        mov     [rsp + 32], eax    // Store EAX (low 32 bits)
+        mov     [rsp + 36], edx    // Store EDX (high 32 bits)
+        
+        mov     ecx, 0x00000987
+        rdmsr
+        mov     [rsp + 24], eax
+        mov     [rsp + 28], edx
+        
+        mov     ecx, 0x00000988
+        rdmsr
+        mov     [rsp + 16], eax
+        mov     [rsp + 20], edx
+        
+        mov     ecx, 0x00000989
+        rdmsr
+        mov     [rsp + 8], eax
+        mov     [rsp + 12], edx
+        
+        mov     ecx, 0x0000098a
+        rdmsr
+        mov     [rsp], eax
+        mov     [rsp + 4], edx
+
+        // Switch stacks
+        mov     [rdi], rsp
+
+        mov     rsp, [rsi]
+
+        // Restore MSRs (reverse order)
+        mov     ecx, 0x0000098a
+        mov     eax, [rsp]
+        mov     edx, [rsp + 4]
+        wrmsr
+        
+        mov     ecx, 0x00000989
+        mov     eax, [rsp + 8]
+        mov     edx, [rsp + 12]
+        wrmsr
+        
+        mov     ecx, 0x00000988
+        mov     eax, [rsp + 16]
+        mov     edx, [rsp + 20]
+        wrmsr
+        
+        mov     ecx, 0x00000987
+        mov     eax, [rsp + 24]
+        mov     edx, [rsp + 28]
+        wrmsr
+        
+        mov     ecx, 0x00000986
+        mov     eax, [rsp + 32]
+        mov     edx, [rsp + 36]
+        wrmsr
+
+        add     rsp, 40     // Free MSR storage
+
+        // Restore UIF (pop saved CF, then set UIF)
+        pop     rax         // AL = saved UIF (CF)
+        test    al, al
+        jz      1f
+        stui
+        jmp     2f
+    1:
+        clui
+    2:
+
+        pop     r15
+        pop     r14
+        pop     r13
+        pop     r12
+        pop     rbx
+        pop     rbp
+        ret",
+        options(noreturn),
+    )
+}
+
+#[naked]
+#[cfg(not(feature = "uintr"))]
 unsafe extern "C" fn context_switch(_current_stack: &mut u64, _next_stack: &u64) {
     asm!(
         "

@@ -4,6 +4,7 @@ MODE ?= release
 LOG ?= warn
 RVM ?= off
 ACCEL ?= on
+UINTR ?= on
 
 # Platform
 ifeq ($(ARCH), x86_64)
@@ -14,6 +15,7 @@ ifeq ($(ARCH), x86_64)
   endif
 else ifeq ($(ARCH), aarch64)
   PLATFORM ?= qemu-virt-arm
+  UINTR = off
 endif
 
 export ARCH
@@ -35,6 +37,10 @@ ifeq ($(RVM), on)
   features += rvm
 endif
 
+ifeq ($(UINTR), on)
+  features += uintr
+endif
+
 build_args := --no-default-features --features "$(features)" --target $(target) -Zbuild-std=core,alloc -Zbuild-std-features=compiler-builtins-mem
 ifeq ($(MODE), release)
   build_args += --release
@@ -46,18 +52,29 @@ OBJCOPY := rust-objcopy --binary-architecture=$(ARCH)
 GDB := gdb-multiarch
 
 # QEMU
-qemu := qemu-system-$(ARCH)
+ifeq ($(UINTR), on)
+  qemu := /home/w-43/os/biglab/qemu-uintr/build/x86_64-softmmu/qemu-system-$(ARCH)
+else
+  qemu := qemu-system-$(ARCH)
+endif
 qemu_args := -nographic -m 128M
 
 
 ifeq ($(ARCH), x86_64)
-  ifeq ($(ACCEL), on)
-    qemu_args += -cpu host -accel kvm
+  ifeq ($(UINTR), on)
+  	qemu_args += -machine q35,kernel_irqchip=split \
+		-cpu qemu64 \
+		-serial mon:stdio \
+		-kernel $(kernel_elf)
+  else
+	ifeq ($(ACCEL), on)
+		qemu_args += -cpu host -accel kvm
+	endif
+	qemu_args += \
+		-machine q35 \
+		-serial mon:stdio \
+		-kernel $(kernel_elf)
   endif
-  qemu_args += \
-    -machine q35 \
-	-serial mon:stdio \
-    -kernel $(kernel_elf)
 else ifeq ($(ARCH), aarch64)
   qemu_args += \
     -cpu cortex-a72 \

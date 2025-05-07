@@ -1,4 +1,4 @@
-mod manager;
+pub mod manager;
 mod schedule;
 mod structs;
 
