@@ -549,8 +549,8 @@ pub fn sys_uintr_register_handler(handler: u64) -> u64 {
     do_uintr_register_handler(handler)
 }
 
-// #[cfg(not(feature = "rvm"))]
-pub fn sys_init_cross_uintr(_upid_addr: u64) -> usize {
+#[cfg(not(feature = "rvm"))]
+pub fn sys_init_cross_uintr(_upid_addr: u64, _desc_addr: u64) -> usize {
     warn!("sys_init_cross_uintr called but rvm is off");
     0
 }

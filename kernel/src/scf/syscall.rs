@@ -6,6 +6,7 @@ use super::SCF;
 use crate::config::KERNEL_HEAP_SIZE;
 use crate::scf::queue::get_queue;
 use crate::task::CurrentTask;
+use crate::config::UPID_MEM_OFFSET;
 
 numeric_enum_macro::numeric_enum! {
     #[repr(u8)]
@@ -22,6 +23,7 @@ numeric_enum_macro::numeric_enum! {
         Clone = 56,
         Fork = 57,
         Exit = 60,
+        UintrInit = 100,
         Unknown = 0xff,
     }
 }
@@ -97,6 +99,23 @@ impl SCF {
         let ret = cond.wait();
         debug!("sys_read: ret={}", ret);
         ret as _
+    }
+
+    #[cfg(feature = "uintr")]
+    pub fn init_cross_uintr(&mut self, upid_addr: u64, desc_addr: u64) -> usize {
+        let cond = SyscallCondVar::new();
+        warn!("sys_init_cross_uintr: upid_addr={:#x}, desc_addr={:#x}", upid_addr, desc_addr);
+    
+        self.send_request(
+            ScfOpcode::UintrInit,
+            [upid_addr - (UPID_MEM_OFFSET as u64), desc_addr, 0, 0],
+            ScfRequestToken::from(&cond),
+        );
+        let mut ret = cond.wait() as usize;
+        warn!("sys_init_cross_uintr: upid got from linux={:#x}", ret);
+        ret = ret + UPID_MEM_OFFSET;
+        warn!("sys_init_cross_uintr: upid_addr={:#x}", ret);
+        ret
     }
 
     pub fn open(&mut self, path: *const u8, flags: usize, mode: usize) -> isize {

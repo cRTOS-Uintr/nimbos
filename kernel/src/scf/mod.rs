@@ -7,6 +7,10 @@ mod syscall;
 pub mod fs;
 pub mod task;
 
+#[cfg(feature = "rvm")]
+#[cfg(feature = "uintr")]
+pub mod uintr;
+
 pub use fs::*;
 pub use task::*;
 

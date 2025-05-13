@@ -24,6 +24,10 @@ pub mod uintr;
 use crate::scf::{fs::*, task::*};
 
 #[cfg(feature = "rvm")]
+#[cfg(feature = "uintr")]
+use crate::scf::uintr::*;
+
+#[cfg(feature = "rvm")]
 use self::task::{sys_nanosleep, sys_waitpid};
 
 #[cfg(not(feature = "rvm"))]
@@ -65,7 +69,7 @@ pub fn syscall(
         SYSCALL_UINTR_REGISTER_HANDLER => sys_uintr_register_handler(arg0 as _) as _,
         #[cfg(feature = "uintr")]
         #[cfg(feature = "rvm")]
-        SYSCALL_INIT_CROSS_UINTR => sys_init_cross_uintr(arg0 as _) as _,
+        SYSCALL_INIT_CROSS_UINTR => sys_init_cross_uintr(arg0 as _, arg1 as _) as _,
         _ => {
             println!("Unsupported syscall_id: {}", syscall_id);
             crate::task::CurrentTask::get().exit(-1);

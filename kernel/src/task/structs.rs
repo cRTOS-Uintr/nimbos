@@ -382,6 +382,12 @@ impl<'a> CurrentTask<'a> {
     }
 
     #[cfg(feature = "rvm")]
+    #[cfg(feature = "uintr")]
+    pub fn scf_init_cross_uintr(&self, upid_addr: u64, desc_addr: u64) -> usize {
+        self.scf.unwrap().init_cross_uintr(upid_addr, desc_addr)
+    }
+
+    #[cfg(feature = "rvm")]
     pub fn scf_write(&self, fd: isize, buf: *const u8, len: usize) -> isize {
         self.scf.unwrap().write(fd, buf, len)
     }

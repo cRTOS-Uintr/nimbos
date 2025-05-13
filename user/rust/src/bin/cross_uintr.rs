@@ -29,7 +29,7 @@ pub fn main() -> i32 {
     println!("upid_addr: {:x}", upid_addr);
     stui();
 
-    let linux_upid = init_cross_uintr(upid_addr);
+    let linux_upid = init_cross_uintr(upid_addr, 0);
 
     loop {
         if INTERRUPT_RECEIVED.load(Ordering::SeqCst) {

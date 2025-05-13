@@ -51,7 +51,7 @@ impl<S: Scheduler> TaskManager<S> {
             let ctx = unsafe{&mut *current_task.context().as_ptr()};
             if let Some(upid_ctx) = &ctx.uintr_upid_ctx {
                 if upid_ctx.as_ref().upid.puir != 0 {
-                    warn!("Found pending uintr, sending to {}", get_apic_id());
+                    // warn!("Found pending uintr, sending to {}", get_apic_id());
                     unsafe {
                         LOCAL_APIC.as_mut().send_ipi(UINTR_NOTIFICATION_VECTOR, get_logical_dest());
                     }
