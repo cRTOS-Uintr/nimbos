@@ -12,6 +12,7 @@ pub use task::*;
 
 use queue::{get_queue, SyscallQueueBuffer};
 use crate::config::scf::{SYSCALL_IPI_IRQ_NUM, SYSCALL_MAX_SLOT_NUM};
+use crate::drivers::interrupt::{IrqHandler, IrqHandlerResult};
 
 pub fn notify(irq_num: usize) {
     crate::drivers::interrupt::send_ipi(irq_num);
@@ -39,6 +40,7 @@ impl SCF {
 }
 
 pub fn handle_irq() {
+    debug!("handle_irq: poping responses.");
     for slot_num in 0..SYSCALL_MAX_SLOT_NUM {
         while let Some(rsp) = get_queue(slot_num).pop_response() {
             if rsp.token.is_valid() {
@@ -48,7 +50,12 @@ pub fn handle_irq() {
     }
 }
 
+const APIC_LINUX_IPI_VECTOR: usize = 40;
 pub fn init() {
     queue::init_all_queues();
-    crate::drivers::timer::add_timer_event(handle_irq);
+    crate::drivers::interrupt::register_handler(APIC_LINUX_IPI_VECTOR, ||  {
+        handle_irq();
+        IrqHandlerResult::Reschedule
+    });
+    // crate::drivers::timer::add_timer_event(handle_irq);
 }

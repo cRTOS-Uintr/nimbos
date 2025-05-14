@@ -17,11 +17,11 @@ numeric_enum_macro::numeric_enum! {
         Open = 2,
         Close = 3,
         Stat = 4,
-        SyncMap = 5,
-        SyncUnmap = 6,
         Clone = 56,
         Fork = 57,
         Exit = 60,
+        SyncMap = 253,
+        SyncUnmap = 254,
         Unknown = 0xff,
     }
 }
