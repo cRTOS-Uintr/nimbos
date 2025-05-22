@@ -8,6 +8,8 @@ use crate::config::{KERNEL_ASPACE_BASE, KERNEL_ASPACE_SIZE, USER_STACK_BASE, USE
 use crate::config::{MMIO_REGIONS, PHYS_MEMORY_END, UPID_SHARE_MEM_VIRT_START, UPID_SHARE_MEM_PHYS_START, UPID_SHARE_MEM_SIZE};
 use crate::mm::{PhysAddr, VirtAddr};
 use crate::sync::LazyInit;
+use crate::sync::Mutex;
+use alloc::sync::Arc;
 
 #[cfg(feature = "rvm")]
 use crate::scf::SCF;
@@ -265,7 +267,7 @@ impl MemorySet {
 
     
     #[cfg(feature = "rvm")]
-    pub fn insert_sync(&mut self, area: MapArea, scf: Option<SCF>) {
+    pub fn insert_sync(&mut self, area: MapArea, scf: &mut Option<&mut SCF>) {
         if area.size > 0 {
             // TODO: check overlap
             if let Entry::Vacant(e) = self.areas.entry(area.start) {
@@ -280,7 +282,7 @@ impl MemorySet {
     }
 
     #[cfg(feature = "rvm")]
-    pub fn load_user_sync(&mut self, elf_data: &[u8], scf: Option<SCF>) -> (VirtAddr, VirtAddr) {
+    pub fn load_user_sync(&mut self, elf_data: &[u8], scf: &mut Option<&mut SCF>) -> (VirtAddr, VirtAddr) {
         use xmas_elf::program::{SegmentData, Type};
         use xmas_elf::{header, ElfFile};
 
@@ -343,7 +345,7 @@ impl MemorySet {
     }
 
     #[cfg(feature = "rvm")]
-    pub fn clear_sync(&mut self, scf: Option<SCF>) {
+    pub fn clear_sync(&mut self, scf: &mut Option<&mut SCF>) {
         for area in self.areas.values_mut() {
             self.pt.unmap_area_sync(area, scf);
         }
@@ -351,7 +353,7 @@ impl MemorySet {
     }
     
     #[cfg(feature = "rvm")]
-    pub fn dup_sync(&self, scf: Option<SCF>) -> Self {
+    pub fn dup_sync(&self, scf: &mut Option<&mut SCF>) -> Self {
         let mut ms = Self::new();
         for area in self.areas.values() {
             ms.insert_sync(area.dup(), scf);

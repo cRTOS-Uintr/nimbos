@@ -12,7 +12,6 @@ const SYSCALL_GET_TIME_MS: usize = 96;
 const SYSCALL_CLOCK_GETTIME: usize = 228;
 const SYSCALL_UINTR_REGISTER_SENDER: usize = 333;
 const SYSCALL_UINTR_REGISTER_HANDLER: usize = 334;
-const SYSCALL_INIT_CROSS_UINTR: usize = 335;
 
 mod fs;
 mod task;
@@ -67,9 +66,6 @@ pub fn syscall(
         SYSCALL_UINTR_REGISTER_SENDER => sys_uintr_register_sender(arg0 as _, arg1 as _),
         #[cfg(feature = "uintr")]
         SYSCALL_UINTR_REGISTER_HANDLER => sys_uintr_register_handler(arg0 as _) as _,
-        #[cfg(feature = "uintr")]
-        #[cfg(feature = "rvm")]
-        SYSCALL_INIT_CROSS_UINTR => sys_init_cross_uintr(arg0 as _, arg1 as _) as _,
         _ => {
             println!("Unsupported syscall_id: {}", syscall_id);
             crate::task::CurrentTask::get().exit(-1);

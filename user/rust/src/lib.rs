@@ -4,8 +4,7 @@
 #![feature(naked_functions)]
 #![feature(panic_info_message)]
 
-use core::sync::atomic::{AtomicBool, Ordering};
-use core::cell::UnsafeCell;
+use core::sync::atomic::Ordering;
 
 #[macro_use]
 pub mod console;
@@ -42,17 +41,7 @@ pub fn read(fd: usize, buf: &mut [u8]) -> isize {
 }
 
 pub fn write(fd: usize, buf: &[u8]) -> isize {
-    // sys_write(fd, buf)
-    let scf = get_uintr_scf();
-    let ret = scf.send_request(1, [fd as u64, buf.as_ptr() as u64, buf.len() as u64, 0]);
-    release_uintr_scf();
-    ret
-}
-
-pub fn reset_scf() {
-    let scf = get_uintr_scf();
-    scf.init_done = false;
-    release_uintr_scf();
+    sys_write(fd, buf)
 }
 
 pub fn exit(exit_code: i32) -> ! {
@@ -72,12 +61,7 @@ pub fn getpid() -> isize {
 }
 
 pub fn fork() -> isize {
-    let ret = sys_fork();
-    if ret == 0 {
-        // child process
-        reset_scf();
-    }
-    ret
+    sys_fork()
 }
 
 pub fn exec(path: &str) -> isize {
@@ -128,10 +112,6 @@ pub fn thread_spawn(entry: fn(usize) -> i32, arg: usize) -> usize {
     sys_clone(entry, arg, newsp)
 }
 
-pub fn init_cross_uintr(upid_addr: usize, desc_addr: usize) -> usize {
-    sys_init_cross_uintr(upid_addr, desc_addr)
-}
-
 /// 开启中断 UIF
 #[inline(always)]
 pub fn stui() {
@@ -154,10 +134,10 @@ pub fn uintr_register_handler(handler: usize) -> usize {
 
 // 发送用户中断
 #[inline(always)]
-pub unsafe fn senduipi(upid_addr: u64) {
+pub unsafe fn senduipi(uitte: u64) {
     asm!(
         "senduipi rax",
-        in("rax") upid_addr,
+        in("rax") uitte,
         options(nostack),
     );
 }
@@ -343,132 +323,4 @@ macro_rules! make_uintr_entry {
             )
         }
     };
-}
-
-static SYSCALL_DONE: AtomicBool = AtomicBool::new(false);
-static UINTR_SCF_INITIALIZED: AtomicBool = AtomicBool::new(false);
-
-#[no_mangle]
-pub extern "C" fn naked_scf_response_handler(trap_frame: &mut TrapFrame) {
-    match trap_frame.uirrv {
-        0 => {
-            UINTR_SCF_INITIALIZED.store(true, Ordering::SeqCst);
-        }
-        1 => {
-            SYSCALL_DONE.store(true, Ordering::SeqCst);
-        }
-        _ => {
-            panic!("Unrecognized uirrv");
-        }
-    }
-    stui();
-}
-
-make_uintr_entry!(scf_response_handler, naked_scf_response_handler);
-
-#[repr(C)]
-#[derive(Debug)]
-struct UintrScfDescriptor {
-    opcode: u8,
-    args: [u64; 4],
-    ret_val: u64,
-}
-
-struct UintrSCF {
-    desc: UintrScfDescriptor,
-    linux_upid: usize,
-    uitte: isize,
-    pub init_done: bool,
-}
-
-impl UintrSCF {
-    const fn new() -> Self {
-        Self {
-            desc: UintrScfDescriptor {
-                opcode: 0,
-                args: [0; 4],
-                ret_val: 0,
-            },
-            linux_upid: 0,
-            uitte: -1,
-            init_done: false,
-        }
-    }
-
-    fn init(&mut self) -> isize {
-        let handler_address = scf_response_handler as usize;
-        let upid_addr = uintr_register_handler(handler_address);
-        stui();
-
-        self.linux_upid = init_cross_uintr(upid_addr, &self.desc as *const UintrScfDescriptor as usize);
-        loop {
-            if UINTR_SCF_INITIALIZED.load(Ordering::SeqCst) {
-                break;
-            }
-        }
-        if self.linux_upid == 0 {
-            return -1;
-        }
-
-        // let entry = uintr_register_sender(self.linux_upid, 0);
-        // if entry < 0 {
-        //     return -1;
-        // }
-        // unsafe { senduipi(entry.try_into().unwrap()) };
-        
-        self.uitte = uintr_register_sender(self.linux_upid, 1);
-        if self.uitte < 0 {
-            return -1;
-        }
-        self.init_done = true;
-        return 0;
-    }
-
-    fn send_request(&mut self, opcode: u8, args: [u64; 4]) -> isize {
-        if !self.init_done {
-            self.init();
-        }
-        if !self.init_done {
-            panic!("SCF not initialized");
-        }
-        // self.desc.opcode = opcode;
-        // self.desc.args = args;
-        // self.desc.ret_val = 0;
-
-        // 强制写入 desc，避免优化
-        unsafe {
-            core::ptr::write_volatile(&mut self.desc.opcode, opcode);
-            core::ptr::write_volatile(&mut self.desc.args, args);
-            core::ptr::write_volatile(&mut self.desc.ret_val, 0);
-        }
-
-        // 确保写入在 senduipi 之前完成
-        core::sync::atomic::fence(Ordering::Release);
-
-        SYSCALL_DONE.store(false, Ordering::SeqCst);
-
-        unsafe {senduipi(self.uitte.try_into().unwrap());}
-        while !SYSCALL_DONE.load(Ordering::SeqCst) {
-            sched_yield();
-        }
-        self.desc.ret_val as _
-    }
-}
-
-static SCF_LOCK: AtomicBool = AtomicBool::new(false);
-struct SyncUnsafeCell(UnsafeCell<UintrSCF>);
-unsafe impl Sync for SyncUnsafeCell {}
-static UINTR_SCF: SyncUnsafeCell = SyncUnsafeCell(UnsafeCell::new(UintrSCF::new()));
-
-fn get_uintr_scf() -> &'static mut UintrSCF {
-    // 自旋等待锁释放
-    while SCF_LOCK.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
-        sched_yield();
-    }
-    
-    unsafe { &mut *UINTR_SCF.0.get() }
-}
-
-fn release_uintr_scf() {
-    SCF_LOCK.store(false, Ordering::Release);
 }

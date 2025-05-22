@@ -16,11 +16,6 @@ pub const SYSCALL_WAITPID: usize = 61;
 pub const SYSCALL_GET_TIME: usize = 96;
 pub const SYSCALL_UINTR_REGISTER_SENDER: usize = 333;
 pub const SYSCALL_UINTR_REGISTER_HANDLER: usize = 334;
-pub const SYSCALL_INIT_CROSS_UINTR: usize = 335;
-
-pub fn sys_init_cross_uintr(upid_addr: usize, desc_addr: usize) -> usize {
-    syscall(SYSCALL_INIT_CROSS_UINTR, [upid_addr, desc_addr, 0]) as usize
-}
 
 pub fn sys_read(fd: usize, buffer: &mut [u8]) -> isize {
     syscall(

@@ -1,5 +1,7 @@
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use alloc::vec::Vec;
+use core::arch::asm;
+use crate::syscall::uintr::sys_uintr_register_sender;
 
 use super::queue::ScfRequestToken;
 use super::SCF;
@@ -56,12 +58,38 @@ impl SyscallCondVar {
     }
 }
 
+// 发送用户中断
+#[inline(always)]
+unsafe fn senduipi(uitte: usize) {
+    asm!(
+        "senduipi rax",
+        in("rax") uitte,
+        options(nostack),
+    );
+}
+
 impl SCF {
+    fn notify(&mut self) {
+        warn!("notify!");
+        #[cfg(feature = "uintr")]
+        {
+            if !self.initialized {
+                self.init_uintr_scf();
+            } else {
+                unsafe {senduipi(self.uitte.try_into().unwrap())};
+            }
+        }
+        #[cfg(not(feature = "uintr"))]
+        {
+            super::notify(self.irq_num());
+        }
+    }
+
     fn send_request(&mut self, opcode: ScfOpcode, args: [u64; 4], token: ScfRequestToken) {
         while !self.queue().send(opcode, args, token) {
             CurrentTask::get().yield_now();
         }
-        super::notify(self.irq_num());
+        self.notify();
     }
 
     fn send_request_kernel(&mut self, opcode: ScfOpcode, args: [u64; 4], token: ScfRequestToken) {
@@ -99,6 +127,25 @@ impl SCF {
         let ret = cond.wait();
         debug!("sys_read: ret={}", ret);
         ret as _
+    }
+
+    #[cfg(feature = "uintr")]
+    pub fn init_uintr_scf(&mut self) {
+        let cond = SyscallCondVar::new();
+        warn!("sys_init_uintr_scf: slot_num={}, initialized={}", self.slot_num, self.initialized);
+    
+        while !self.queue().send(
+            ScfOpcode::UintrInit,
+            [0, 0, 0, 0],
+            ScfRequestToken::from(&cond),
+        ) {
+            CurrentTask::get().yield_now();
+        }
+        super::notify(self.irq_num());
+        let upid_addr = cond.wait() + UPID_MEM_OFFSET as u64;
+        self.uitte = sys_uintr_register_sender(upid_addr, 0);
+        self.initialized = self.uitte >= 0;
+        warn!("sys_init_uintr_scf: upid_addr={:#x}, uitte={:#x}, initialized={}", upid_addr, self.uitte, self.initialized);
     }
 
     #[cfg(feature = "uintr")]

@@ -12,7 +12,6 @@ static TESTS: &[&str] = &[
     "forktest_simple\0",
     "self_uintr\0",
     "uintr_test\0",
-    "cross_uintr\0",
     "hello_world\0",
     "matrix\0",
     "sleep\0",

@@ -21,15 +21,19 @@ pub fn notify(irq_num: usize) {
     crate::drivers::interrupt::send_ipi(irq_num);
 }
 
-#[derive(Copy, Clone)]
+// #[derive(Copy, Clone)]
 pub struct SCF {
     pub slot_num: usize,
+    pub initialized: bool,
+    pub uitte: isize,
 }
 
 impl SCF {
     pub fn new(slot_num: usize) -> Self {
         Self {
             slot_num,
+            initialized: false,
+            uitte: 0,
         }
     }
 
