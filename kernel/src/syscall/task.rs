@@ -1,23 +1,27 @@
 use super::time::TimeSpec;
-use crate::arch::TrapFrame;
 use crate::mm::{UserInPtr, UserOutPtr};
-use crate::task::{spawn_task, CurrentTask};
+use crate::task::CurrentTask;
 
+#[cfg(not(feature = "rvm"))]
 const MAX_STR_LEN: usize = 256;
 
+#[cfg(not(feature = "rvm"))]
 pub fn sys_exit(exit_code: i32) -> ! {
     CurrentTask::get().exit(exit_code);
 }
 
+#[cfg(not(feature = "rvm"))]
 pub fn sys_yield() -> isize {
     CurrentTask::get().yield_now();
     0
 }
 
+#[cfg(not(feature = "rvm"))]
 pub fn sys_getpid() -> isize {
     CurrentTask::get().pid().as_usize() as isize
 }
 
+#[cfg(not(feature = "rvm"))]
 pub fn sys_clone(newsp: usize, tf: &TrapFrame) -> isize {
     let new_task = CurrentTask::get().new_clone(newsp, tf);
     let pid = new_task.pid().as_usize() as isize;
@@ -25,6 +29,7 @@ pub fn sys_clone(newsp: usize, tf: &TrapFrame) -> isize {
     pid
 }
 
+#[cfg(not(feature = "rvm"))]
 pub fn sys_fork(tf: &TrapFrame) -> isize {
     let new_task = CurrentTask::get().new_fork(tf);
     let pid = new_task.pid().as_usize() as isize;
@@ -32,6 +37,7 @@ pub fn sys_fork(tf: &TrapFrame) -> isize {
     pid
 }
 
+#[cfg(not(feature = "rvm"))]
 pub fn sys_exec(path: UserInPtr<u8>, tf: &mut TrapFrame) -> isize {
     let (path_buf, len) = path.read_str::<MAX_STR_LEN>();
     let path = core::str::from_utf8(&path_buf[..len]).unwrap();

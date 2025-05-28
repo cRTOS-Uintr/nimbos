@@ -16,7 +16,7 @@ pub use task::*;
 
 use queue::{get_queue, SyscallQueueBuffer};
 use crate::config::scf::{SYSCALL_IPI_IRQ_NUM, SYSCALL_MAX_SLOT_NUM};
-use crate::drivers::interrupt::{IrqHandler, IrqHandlerResult};
+use crate::drivers::interrupt::IrqHandlerResult;
 use crate::sync::Mutex;
 
 pub fn notify(irq_num: usize) {

@@ -139,6 +139,7 @@ impl Task {
         t
     }
 
+    #[cfg(not(feature = "rvm"))]
     pub fn new_user(path: &str) -> Arc<Self> {
         let elf_data = loader::get_app_data_by_name(path).expect("new_user: no such app");
         let mut vm = MemorySet::new();
@@ -199,6 +200,7 @@ impl Task {
         t
     }
 
+    #[cfg(not(feature = "rvm"))]
     pub fn new_fork(self: &Arc<Self>, tf: &TrapFrame) -> Arc<Self> {
         assert!(!self.is_kernel_task());
         let mut t = Self::new_common(TaskId::alloc());
@@ -315,6 +317,7 @@ impl<'a> CurrentTask<'a> {
         TASK_MANAGER.lock().exit_current(self, exit_code)
     }
 
+    #[cfg(not(feature = "rvm"))]
     pub fn exec(&self, path: &str, tf: &mut TrapFrame) -> isize {
         assert!(!self.is_kernel_task());
         assert_eq!(Arc::strong_count(self.vm.as_ref().unwrap()), 1);

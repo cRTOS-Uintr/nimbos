@@ -1,6 +1,5 @@
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use crate::task::manager::TASK_MANAGER;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
 use crate::syscall::uintr::sys_uintr_register_sender;
@@ -8,7 +7,6 @@ use crate::syscall::uintr::sys_uintr_register_sender;
 use super::queue::ScfRequestToken;
 use super::SCF;
 use crate::config::KERNEL_HEAP_SIZE;
-use crate::scf::queue::get_queue;
 use crate::task::CurrentTask;
 use crate::config::UPID_MEM_OFFSET;
 

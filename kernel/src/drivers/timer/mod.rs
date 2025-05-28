@@ -28,6 +28,7 @@ pub fn timer_tick() {
     }
 }
 
+#[allow(unused)]
 pub fn add_timer_event(callback: TimerCallback) {
     TIMER_EVENTS.lock().push(callback);
 }

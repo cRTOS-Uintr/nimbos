@@ -10,7 +10,7 @@ use crate::drivers::interrupt::LOCAL_APIC;
 #[cfg(feature = "uintr")]
 use crate::syscall::uintr::UINTR_NOTIFICATION_VECTOR;
 #[cfg(feature = "uintr")]
-use crate::drivers::interrupt::apic::{get_apic_id, get_logical_dest};
+use crate::drivers::interrupt::apic::get_logical_dest;
 
 pub struct TaskManager<S: Scheduler> {
     scheduler: S,

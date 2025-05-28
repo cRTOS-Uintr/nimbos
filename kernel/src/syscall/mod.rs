@@ -23,10 +23,6 @@ pub mod uintr;
 use crate::scf::{fs::*, task::*};
 
 #[cfg(feature = "rvm")]
-#[cfg(feature = "uintr")]
-use crate::scf::uintr::*;
-
-#[cfg(feature = "rvm")]
 use self::task::{sys_nanosleep, sys_waitpid};
 
 #[cfg(not(feature = "rvm"))]

@@ -1,7 +1,5 @@
 use alloc::{vec, vec::Vec};
 use core::{fmt::Debug, marker::PhantomData};
-use crate::sync::Mutex;
-use alloc::sync::Arc;
 
 use super::{MapArea, MemFlags, PhysAddr, PhysFrame, VirtAddr, PAGE_SIZE};
 

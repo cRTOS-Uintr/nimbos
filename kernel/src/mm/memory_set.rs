@@ -8,8 +8,6 @@ use crate::config::{KERNEL_ASPACE_BASE, KERNEL_ASPACE_SIZE, USER_STACK_BASE, USE
 use crate::config::{MMIO_REGIONS, PHYS_MEMORY_END, UPID_SHARE_MEM_VIRT_START, UPID_SHARE_MEM_PHYS_START, UPID_SHARE_MEM_SIZE};
 use crate::mm::{PhysAddr, VirtAddr};
 use crate::sync::LazyInit;
-use crate::sync::Mutex;
-use alloc::sync::Arc;
 
 #[cfg(feature = "rvm")]
 use crate::scf::SCF;
@@ -173,6 +171,7 @@ impl MemorySet {
         }
     }
 
+    #[allow(unused)]
     pub fn load_user(&mut self, elf_data: &[u8]) -> (VirtAddr, VirtAddr) {
         use xmas_elf::program::{Flags, SegmentData, Type};
         use xmas_elf::{header, ElfFile};
@@ -253,6 +252,7 @@ impl MemorySet {
         self.areas.clear();
     }
 
+    #[allow(unused)]
     pub fn dup(&self) -> Self {
         let mut ms = Self::new();
         for area in self.areas.values() {
