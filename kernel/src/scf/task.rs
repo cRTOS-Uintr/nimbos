@@ -5,6 +5,7 @@ use crate::task::{spawn_task, CurrentTask};
 const MAX_STR_LEN: usize = 256;
 
 pub fn sys_exit(exit_code: i32) -> ! {
+    trace!("exit task_id: {}", CurrentTask::get().pid().as_usize());
     CurrentTask::get().scf_exit();
     CurrentTask::get().exit(exit_code);
 }

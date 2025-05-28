@@ -157,6 +157,10 @@ pub struct TaskContext {
     pub upid_activated: bool,
     #[cfg(feature = "uintr")]
     pub uintr_upid_ctx: Option<Box<UintrUpidCtx>>,
+    #[cfg(feature = "rvm")]
+    pub scf_initialized: bool,
+    #[cfg(feature = "rvm")]
+    pub scf_uitte: isize,
 }
 
 impl TaskContext {
@@ -173,6 +177,8 @@ impl TaskContext {
             uitt_activated: false,
             upid_activated: false,
             uintr_upid_ctx: None,
+            scf_initialized: false,
+            scf_uitte: -1,
         }
     }
 

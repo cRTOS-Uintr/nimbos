@@ -116,7 +116,7 @@ impl<PTE: GenericPTE> PageTableImpl<PTE> {
     }
 
     #[cfg(feature = "rvm")]
-    pub fn map_area_sync(&mut self, area: &mut MapArea, scf: &mut Option<&mut SCF>) {
+    pub fn map_area_sync(&mut self, area: &mut MapArea, scf: &Option<SCF>) {
         let mut vaddr = area.start.as_usize();
         let end = vaddr + area.size;
         let sync = area.flags.contains(MemFlags::SYNC);
@@ -124,7 +124,7 @@ impl<PTE: GenericPTE> PageTableImpl<PTE> {
             let paddr = area.map(VirtAddr::new(vaddr));
             if sync && scf.is_some() {
                 let prot = area.flags.bits & 0x7;
-                let ret = scf.as_mut().unwrap().syncmap(vaddr as _, PAGE_SIZE as _, paddr.as_usize(), prot);
+                let ret = scf.as_ref().unwrap().syncmap(vaddr as _, PAGE_SIZE as _, paddr.as_usize(), prot);
                 if ret != 0 {
                     panic!("syncmap failed: addr={:x}, len={:x}, paddr={:x}, flags={:x}, ret={}", vaddr, PAGE_SIZE, paddr.as_usize(), prot, ret);
                 }
@@ -145,14 +145,14 @@ impl<PTE: GenericPTE> PageTableImpl<PTE> {
     }
 
     #[cfg(feature = "rvm")]
-    pub fn unmap_area_sync(&mut self, area: &mut MapArea, scf: &mut Option<&mut SCF>) {
+    pub fn unmap_area_sync(&mut self, area: &mut MapArea, scf: &Option<SCF>) {
         let mut vaddr = area.start.as_usize();
         let end = vaddr + area.size;
         let sync = area.flags.contains(MemFlags::SYNC);
         while vaddr < end {
             area.unmap(VirtAddr::new(vaddr));
             if sync && scf.is_some() {
-                let ret = scf.as_mut().unwrap().syncunmap(vaddr as _, PAGE_SIZE as _);
+                let ret = scf.as_ref().unwrap().syncunmap(vaddr as _, PAGE_SIZE as _);
                 if ret != 0 {
                     panic!("syncunmap failed: addr={:x}, len={:x}, ret={}", vaddr, PAGE_SIZE, ret);
                 }

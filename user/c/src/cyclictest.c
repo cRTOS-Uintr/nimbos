@@ -33,7 +33,7 @@ musl-gcc cyclictest.c -lpthread -DUSE_MUSL
 #define USEC_PER_SEC        1000000
 #define NSEC_PER_SEC        1000000000
 #define DEFAULT_CLOCK       CLOCK_MONOTONIC
-#define MAX_CYCLES          50000
+#define MAX_CYCLES          2000
 #define PRINT_FREQ          500 // 500ms
 
 struct thread_param {
@@ -57,8 +57,8 @@ struct thread_stat {
 static int interval = DEFAULT_INTERVAL;
 // static int priority = DEFAULT_PRIORITY;
 static struct thread_param thrpar[NUM_THREADS];
-static struct thread_stat thrstat[NUM_THREADS];
-static int shutdown = 0;
+static volatile struct thread_stat thrstat[NUM_THREADS];
+static volatile int shutdown = 0;
 
 static inline void tsnorm(struct timespec* ts)
 {
@@ -92,14 +92,14 @@ static void *timerthread(void* param)
 {
     int err;
     struct thread_param* par = param;
-    struct thread_stat* stat = &thrstat[par->id];
+    volatile struct thread_stat* stat = &thrstat[par->id];
     struct timespec now, saved, interval;
 
     stat->tid = getpid();
     interval.tv_sec = par->interval / USEC_PER_SEC;
     interval.tv_nsec = (par->interval % USEC_PER_SEC) * 1000;
 
-    while (!shutdown) {
+    while (!(volatile int)shutdown) {
         err = clock_gettime(DEFAULT_CLOCK, &saved);
         assert(!err && "clock_gettime() failed");
 
@@ -122,11 +122,12 @@ static void *timerthread(void* param)
         stat->sum += diff;
         stat->cycles++;
     }
+    // usleep(PRINT_FREQ * 10000);
 
     return NULL;
 }
 
-static void print_stat(struct thread_param* par, struct thread_stat* stat)
+static void print_stat(volatile struct thread_param* par, volatile struct thread_stat* stat)
 {
     int index = par->id;
 
@@ -151,7 +152,7 @@ int main()
 
     for (int i = 0; i < NUM_THREADS; i++) {
         struct thread_param* par = &thrpar[i];
-        struct thread_stat* stat = &thrstat[i];
+        volatile struct thread_stat* stat = &thrstat[i];
         par->id = i;
         par->cpu = i % MAX_CPUS;
         // par->prio = priority;
@@ -182,6 +183,7 @@ int main()
             break;
     }
     shutdown = 1;
+    printf("shutdown main %d\n", shutdown);
     for (int i = 0; i < NUM_THREADS; i++) {
         print_stat(&thrpar[i], &thrstat[i]);
     }

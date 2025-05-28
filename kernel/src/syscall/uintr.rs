@@ -308,7 +308,7 @@ fn uintr_init_sender() {
     let current_task = CurrentTask::get().0;
     let mut ctx = unsafe{&mut *current_task.context().as_ptr()};
     if let None = ctx.uitt {
-        warn!("Initializing sender");
+        trace!("Initializing sender");
         ctx.uitt = Some(Arc::new(Mutex::new(UintrUittCtx {
             uitt: [UintrUittEntry(UnalignedUintrUittEntry {
                 valid: 0,
@@ -332,7 +332,7 @@ pub fn genmask_ull(h: u64, l: u64) -> u64 {
 fn uintr_set_sender_msrs(ctx: &mut TaskContext) {
     let uitt_ptr = ctx.uitt.as_ref().unwrap().lock().uitt.as_ptr() as usize;
 
-    warn!("Setting MSRs for sender");
+    trace!("Setting MSRs for sender");
     unsafe {
         // Write to MSR_IA32_UINTR_TT
         asm!(
@@ -367,7 +367,7 @@ fn uintr_set_sender_msrs(ctx: &mut TaskContext) {
             options(nostack, nomem),
         );
     }
-    warn!("MSRs set for sender");
+    trace!("MSRs set for sender");
 
     ctx.uitt_activated = true;
 }
@@ -379,8 +379,8 @@ fn do_uintr_register_sender(uvec: usize, upid: *mut UintrUpid) -> isize {
     }
 
     uintr_init_sender();
-    warn!("Registering sender: uvec={:#x}, upid={:#x}", uvec, upid as usize);
-    warn!("UPID content: {:#?}", unsafe{*(upid as *const UintrUpid)});
+    trace!("Registering sender: uvec={:#x}, upid={:#x}", uvec, upid as usize);
+    debug!("UPID content: {:#?}", unsafe{*(upid as *const UintrUpid)});
     let current_task = CurrentTask::get().0;
     let ctx = unsafe{&mut *current_task.context().as_ptr()};
     let uitt_ctx = ctx.uitt.as_mut().unwrap();
@@ -392,7 +392,7 @@ fn do_uintr_register_sender(uvec: usize, upid: *mut UintrUpid) -> isize {
         uitt_entry.target_upid_addr = upid as u64;
         drop(uitt_entry);
         uitt_ctx.uitt_mask.set(entry);
-        warn!("UITT entry {} registered", entry);
+        debug!("UITT entry {} registered", entry);
     
         if !ctx.uitt_activated {
             drop(uitt_ctx);
@@ -408,7 +408,7 @@ fn do_uintr_register_sender(uvec: usize, upid: *mut UintrUpid) -> isize {
 
 pub fn sys_uintr_register_sender(upid_addr: u64, uvec: usize) -> isize {
     let _manager = TASK_MANAGER.lock();
-    warn!("sys_uintr_register_sender called");
+    trace!("sys_uintr_register_sender called");
     do_uintr_register_sender(uvec, upid_addr as *mut UintrUpid)
 }
 

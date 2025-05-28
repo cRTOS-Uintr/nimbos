@@ -1,4 +1,7 @@
 use alloc::sync::{Arc, Weak};
+use crate::scf::queue::get_queue;
+use core::ops::DerefMut;
+use core::ops::Deref;
 use alloc::{boxed::Box, vec::Vec};
 use core::sync::atomic::{AtomicI32, AtomicU8, AtomicUsize, Ordering};
 
@@ -48,7 +51,7 @@ pub struct Task {
     pub(super) children: Mutex<Vec<Arc<Task>>>,
 
     #[cfg(feature = "rvm")]
-    scf: Arc<Mutex<Option<SCF>>>,
+    pub scf: Arc<Option<SCF>>,
 }
 
 impl TaskId {
@@ -99,7 +102,7 @@ impl Task {
             children: Mutex::new(Vec::new()),
 
             #[cfg(feature = "rvm")]
-            scf: Arc::new(Mutex::new(None)),
+            scf: Arc::new(None),
         }
     }
 
@@ -157,11 +160,11 @@ impl Task {
     pub fn new_user_scf(path: &str) -> Arc<Self> {
         let mut t = Self::new_common(TaskId::alloc());
         // Must set SCF before setting memory set
-        t.scf = Arc::new(Mutex::new(Some(SCF::new(0))));
+        t.scf = Arc::new(Some(SCF::new(0)));
 
         let elf_data = loader::get_app_data_by_name(path).expect("new_user: no such app");
         let mut vm = MemorySet::new();
-        let (entry, ustack_top) = vm.load_user_sync(elf_data, &mut t.scf.lock().as_mut());
+        let (entry, ustack_top) = vm.load_user_sync(elf_data, &mut t.scf);
 
         t.entry = EntryState::User(Box::new(TrapFrame::new_user(entry, ustack_top, 0)));
         t.ctx
@@ -179,6 +182,7 @@ impl Task {
         let mut t = Self::new_common(TaskId::alloc());
         t.is_shared = true;
         let vm = self.vm.as_ref().unwrap().clone();
+        debug!("cloned task: {} from parent: {} vm_strong_count: {}", t.id.as_usize(), self.id.as_usize(), Arc::strong_count(&vm));
         t.entry = EntryState::User(Box::new(tf.new_clone(VirtAddr::new(newsp))));
         t.ctx.get_mut().init(
             task_entry as _,
@@ -186,6 +190,8 @@ impl Task {
             vm.lock().page_table_root(),
             false,
         );
+        t.scf =  Arc::clone(&self.scf);
+        *t.scf.as_ref().as_ref().unwrap().ref_cnt.lock().deref_mut() += 1;
         t.vm = Some(vm);
 
         let t = Arc::new(t);
@@ -212,8 +218,8 @@ impl Task {
     pub fn new_fork_scf(self: &Arc<Self>, tf: &TrapFrame, slot_num: usize) -> Arc<Self> {
         assert!(!self.is_kernel_task());
         let mut t = Self::new_common(TaskId::alloc());
-        t.scf = Arc::new(Mutex::new(Some(SCF::new(slot_num))));
-        let vm = self.vm.as_ref().unwrap().lock().dup_sync(&mut t.scf.lock().as_mut());
+        t.scf = Arc::new(Some(SCF::new(slot_num)));
+        let vm = self.vm.as_ref().unwrap().lock().dup_sync(t.scf.as_ref());
         t.entry = EntryState::User(Box::new(tf.new_fork()));
         t.ctx
             .get_mut()
@@ -301,7 +307,6 @@ impl<'a> CurrentTask<'a> {
     }
 
     pub fn exit(&self, exit_code: i32) -> ! {
-        info!("task exit with code {}", exit_code);
         if let Some(vm) = self.vm.as_ref() {
             if Arc::strong_count(vm) == 1 {
                 vm.lock().clear(); // drop memory set before lock
@@ -352,8 +357,8 @@ impl<'a> CurrentTask<'a> {
         assert_eq!(Arc::strong_count(self.vm.as_ref().unwrap()), 1);
         if let Some(elf_data) = loader::get_app_data_by_name(path) {
             let mut vm = self.vm.as_ref().unwrap().lock();
-            vm.clear_sync(&mut self.scf.lock().as_mut());
-            let (entry, ustack_top) = vm.load_user_sync(elf_data, &mut self.scf.lock().as_mut());
+            vm.clear_sync(self.scf.as_ref());
+            let (entry, ustack_top) = vm.load_user_sync(elf_data, self.scf.as_ref());
             *tf = TrapFrame::new_user(entry, ustack_top, 0);
             instructions::flush_tlb_all();
             0
@@ -366,8 +371,8 @@ impl<'a> CurrentTask<'a> {
     pub fn scf_rexec(&self, path: *const u8, tf: &mut TrapFrame) -> isize {
         if let Some(data) = CurrentTask::get().scf_exec(path) {
             let mut vm = self.vm.as_ref().unwrap().lock();
-            vm.clear_sync(&mut self.scf.lock().as_mut());
-            let (entry, ustack_top) = vm.load_user_sync(data.as_slice(), &mut self.scf.lock().as_mut());
+            vm.clear_sync(self.scf.as_ref());
+            let (entry, ustack_top) = vm.load_user_sync(data.as_slice(), self.scf.as_ref());
             *tf = TrapFrame::new_user(entry, ustack_top, 0);
             instructions::flush_tlb_all();
             0
@@ -378,54 +383,65 @@ impl<'a> CurrentTask<'a> {
 
     #[cfg(feature = "rvm")]
     pub fn scf_read(&self, fd: isize, buf: *mut u8, len: usize) -> isize {
-        self.scf.lock().as_mut().unwrap().read(fd, buf, len)
+        self.scf.as_ref().as_ref().unwrap().read(fd, buf, len)
     }
 
     #[cfg(feature = "rvm")]
     #[cfg(feature = "uintr")]
     pub fn scf_init_cross_uintr(&self, upid_addr: u64, desc_addr: u64) -> usize {
-        self.scf.lock().as_mut().unwrap().init_cross_uintr(upid_addr, desc_addr)
+        self.scf.as_ref().as_ref().unwrap().init_cross_uintr(upid_addr, desc_addr)
     }
 
     #[cfg(feature = "rvm")]
     pub fn scf_write(&self, fd: isize, buf: *const u8, len: usize) -> isize {
-        let ret = self.scf.lock().as_mut().unwrap().write(fd, buf, len);
+        let ret = self.scf.as_ref().as_ref().unwrap().write(fd, buf, len);
         ret
     }
 
     #[cfg(feature = "rvm")]
     pub fn scf_open(&self, path: *const u8, flags: usize, mode: usize) -> isize {
-        self.scf.lock().as_mut().unwrap().open(path, flags, mode)
+        self.scf.as_ref().as_ref().unwrap().open(path, flags, mode)
     }
 
     #[cfg(feature = "rvm")]
     pub fn scf_close(&self, fd: isize) -> isize {
-        self.scf.lock().as_mut().unwrap().close(fd)
+        self.scf.as_ref().as_ref().unwrap().close(fd)
     }
 
     #[cfg(feature = "rvm")]
     pub fn scf_syncfork(&self) -> isize {
-        self.scf.lock().as_mut().unwrap().syncfork()
+        self.scf.as_ref().as_ref().unwrap().syncfork()
     }
 
     #[cfg(feature = "rvm")]
     pub fn scf_stat(&self, path: *const u8) -> isize {
-        self.scf.lock().as_mut().unwrap().stat(path)
+        self.scf.as_ref().as_ref().unwrap().stat(path)
     }
 
     #[cfg(feature = "rvm")]
     pub fn scf_exec(&self, path: *const u8) -> Option<Vec<u8>> {
-        self.scf.lock().as_mut().unwrap().exec(path)
+        self.scf.as_ref().as_ref().unwrap().exec(path)
     }
 
     #[cfg(feature = "rvm")]
     pub fn scf_clone(&self) -> isize {
-        self.scf.lock().as_mut().unwrap().clone_()
+        self.scf.as_ref().as_ref().unwrap().clone_()
     }
 
     #[cfg(feature = "rvm")]
     pub fn scf_exit(&self) -> isize {
-        self.scf.lock().as_mut().unwrap().exit()
+        trace!("exit scf {}", self.pid().as_usize());
+        let slot_num = self.scf.as_ref().as_ref().unwrap().slot_num;
+        let ret = self.scf.as_ref().as_ref().unwrap().exit();
+        debug!("in exit scf ref_cnt: {} strong_cnt: {}", self.scf.as_ref().as_ref().unwrap().ref_cnt.lock().deref(), Arc::strong_count(&self.scf));
+        if *self.scf.as_ref().as_ref().unwrap().ref_cnt.lock().deref() == 1 {
+            // If this is the last reference, reset the queue.
+            // This is to avoid memory leak in linux scf.
+            debug!("sys_exit: resetting queue for slot {}", slot_num);
+            get_queue(slot_num).reset(); // Or to reset in linux?
+        }
+        *self.scf.as_ref().as_ref().unwrap().ref_cnt.lock().deref_mut() -= 1;
+        ret
     }
 }
 

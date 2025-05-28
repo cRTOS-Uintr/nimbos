@@ -73,6 +73,9 @@ impl<T> SpinNoIrqLock<T> {
     }
 
     pub fn lock(&self) -> SpinNoIrqLockGuard<T> {
+        // while (self.is_locked()) {
+        //     core::hint::spin_loop();
+        // }
         let irq_enabled_before = spin_lock_irqsave(&self.lock);
         SpinNoIrqLockGuard {
             irq_enabled_before,

@@ -267,7 +267,7 @@ impl MemorySet {
 
     
     #[cfg(feature = "rvm")]
-    pub fn insert_sync(&mut self, area: MapArea, scf: &mut Option<&mut SCF>) {
+    pub fn insert_sync(&mut self, area: MapArea, scf: &Option<SCF>) {
         if area.size > 0 {
             // TODO: check overlap
             if let Entry::Vacant(e) = self.areas.entry(area.start) {
@@ -282,7 +282,7 @@ impl MemorySet {
     }
 
     #[cfg(feature = "rvm")]
-    pub fn load_user_sync(&mut self, elf_data: &[u8], scf: &mut Option<&mut SCF>) -> (VirtAddr, VirtAddr) {
+    pub fn load_user_sync(&mut self, elf_data: &[u8], scf: &Option<SCF>) -> (VirtAddr, VirtAddr) {
         use xmas_elf::program::{SegmentData, Type};
         use xmas_elf::{header, ElfFile};
 
@@ -345,7 +345,7 @@ impl MemorySet {
     }
 
     #[cfg(feature = "rvm")]
-    pub fn clear_sync(&mut self, scf: &mut Option<&mut SCF>) {
+    pub fn clear_sync(&mut self, scf: &Option<SCF>) {
         for area in self.areas.values_mut() {
             self.pt.unmap_area_sync(area, scf);
         }
@@ -353,7 +353,7 @@ impl MemorySet {
     }
     
     #[cfg(feature = "rvm")]
-    pub fn dup_sync(&self, scf: &mut Option<&mut SCF>) -> Self {
+    pub fn dup_sync(&self, scf: &Option<SCF>) -> Self {
         let mut ms = Self::new();
         for area in self.areas.values() {
             ms.insert_sync(area.dup(), scf);

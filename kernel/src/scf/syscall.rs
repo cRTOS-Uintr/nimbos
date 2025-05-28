@@ -1,4 +1,6 @@
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use crate::task::manager::TASK_MANAGER;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::arch::asm;
 use crate::syscall::uintr::sys_uintr_register_sender;
@@ -69,14 +71,18 @@ unsafe fn senduipi(uitte: usize) {
 }
 
 impl SCF {
-    fn notify(&mut self) {
-        warn!("notify!");
+    fn notify(&self) {
+        // warn!("notify!");
         #[cfg(feature = "uintr")]
         {
-            if !self.initialized {
+            let _manager = TASK_MANAGER.lock();
+            let current_task = CurrentTask::get().0;
+            let ctx = unsafe{&mut *current_task.context().as_ptr()};
+            if !ctx.scf_initialized {
+                drop(_manager);
                 self.init_uintr_scf();
             } else {
-                unsafe {senduipi(self.uitte.try_into().unwrap())};
+                unsafe {senduipi(ctx.scf_uitte.try_into().unwrap())};
             }
         }
         #[cfg(not(feature = "uintr"))]
@@ -85,21 +91,21 @@ impl SCF {
         }
     }
 
-    fn send_request(&mut self, opcode: ScfOpcode, args: [u64; 4], token: ScfRequestToken) {
+    fn send_request(&self, opcode: ScfOpcode, args: [u64; 4], token: ScfRequestToken) {
         while !self.queue().send(opcode, args, token) {
             CurrentTask::get().yield_now();
         }
         self.notify();
     }
 
-    fn send_request_kernel(&mut self, opcode: ScfOpcode, args: [u64; 4], token: ScfRequestToken) {
+    fn send_request_kernel(&self, opcode: ScfOpcode, args: [u64; 4], token: ScfRequestToken) {
         while !self.queue().send(opcode, args, token) {
             core::hint::spin_loop();
         }
         super::notify(self.irq_num());
     }
 
-    pub fn write(&mut self, fd: isize, buf: *const u8, len: usize) -> isize {
+    pub fn write(&self, fd: isize, buf: *const u8, len: usize) -> isize {
         debug!("sys_write: fd={}, buf={:#x}, len={}, slot={}", fd, buf as usize, len, self.slot_num);
         assert!(len < CHUNK_SIZE);
         let cond = SyscallCondVar::new();
@@ -112,7 +118,7 @@ impl SCF {
         ret as _
     }
 
-    pub fn read(&mut self, fd: isize, buf: *mut u8, len: usize) -> isize {
+    pub fn read(&self, fd: isize, buf: *mut u8, len: usize) -> isize {
         debug!("sys_read: fd={}, buf={:#x}, len={}, slot={}", fd, buf as usize, len, self.slot_num);
         // assert!(len < CHUNK_SIZE);
         if fd < 0 {
@@ -130,9 +136,14 @@ impl SCF {
     }
 
     #[cfg(feature = "uintr")]
-    pub fn init_uintr_scf(&mut self) {
+    pub fn init_uintr_scf(&self) {
         let cond = SyscallCondVar::new();
-        warn!("sys_init_uintr_scf: slot_num={}, initialized={}", self.slot_num, self.initialized);
+        {
+            let _manager = TASK_MANAGER.lock();
+            let current_task = CurrentTask::get().0;
+            let ctx = unsafe{&mut *current_task.context().as_ptr()};
+            info!("sys_init_uintr_scf: slot_num={}, initialized={}", self.slot_num, ctx.scf_initialized);
+        }
     
         while !self.queue().send(
             ScfOpcode::UintrInit,
@@ -143,15 +154,21 @@ impl SCF {
         }
         super::notify(self.irq_num());
         let upid_addr = cond.wait() + UPID_MEM_OFFSET as u64;
-        self.uitte = sys_uintr_register_sender(upid_addr, 0);
-        self.initialized = self.uitte >= 0;
-        warn!("sys_init_uintr_scf: upid_addr={:#x}, uitte={:#x}, initialized={}", upid_addr, self.uitte, self.initialized);
+        let uitte = sys_uintr_register_sender(upid_addr, 0);
+        
+        let _manager = TASK_MANAGER.lock();
+        
+        let current_task = CurrentTask::get().0;
+        let ctx = unsafe{&mut *current_task.context().as_ptr()};
+        ctx.scf_uitte = uitte;
+        ctx.scf_initialized = ctx.scf_uitte >= 0;
+        info!("sys_init_uintr_scf: upid_addr={:#x}, uitte={:#x}, initialized={}", upid_addr, ctx.scf_uitte, ctx.scf_initialized);
     }
 
     #[cfg(feature = "uintr")]
-    pub fn init_cross_uintr(&mut self, upid_addr: u64, desc_addr: u64) -> usize {
+    pub fn init_cross_uintr(&self, upid_addr: u64, desc_addr: u64) -> usize {
         let cond = SyscallCondVar::new();
-        warn!("sys_init_cross_uintr: upid_addr={:#x}, desc_addr={:#x}", upid_addr, desc_addr);
+        debug!("sys_init_cross_uintr: upid_addr={:#x}, desc_addr={:#x}", upid_addr, desc_addr);
     
         self.send_request(
             ScfOpcode::UintrInit,
@@ -165,7 +182,7 @@ impl SCF {
         ret
     }
 
-    pub fn open(&mut self, path: *const u8, flags: usize, mode: usize) -> isize {
+    pub fn open(&self, path: *const u8, flags: usize, mode: usize) -> isize {
         debug!("sys_open: path={:#x}, flags={:#x}, mode={:#x}, slot={}", path as usize, flags, mode, self.slot_num);
         let cond = SyscallCondVar::new();
         self.send_request(
@@ -177,7 +194,7 @@ impl SCF {
         ret as _
     }
 
-    pub fn close(&mut self, fd: isize) -> isize {
+    pub fn close(&self, fd: isize) -> isize {
         debug!("sys_close: fd={}, slot={}", fd, self.slot_num);
         let cond = SyscallCondVar::new();
         self.send_request(
@@ -189,7 +206,7 @@ impl SCF {
         ret as _
     }
 
-    pub fn syncmap(&mut self, vaddr: usize, len: usize, paddr: usize, prot: usize) -> isize {
+    pub fn syncmap(&self, vaddr: usize, len: usize, paddr: usize, prot: usize) -> isize {
         debug!("sys_syncmap: vaddr={:#x}, len={:#x}, paddr={:#x}, prot={:#x}, slot={}", vaddr, len, paddr, prot, self.slot_num);
         let cond = SyscallCondVar::new();
         self.send_request_kernel(
@@ -210,7 +227,7 @@ impl SCF {
         }
     }
 
-    pub fn syncunmap(&mut self, vaddr: usize, len: usize) -> isize {
+    pub fn syncunmap(&self, vaddr: usize, len: usize) -> isize {
         debug!("sys_syncunmap: vaddr={:#x}, len={:#x}, slot={}", vaddr, len, self.slot_num);
         let cond = SyscallCondVar::new();
         self.send_request_kernel(
@@ -231,7 +248,7 @@ impl SCF {
         }
     }
 
-    pub fn syncfork(&mut self) -> isize {
+    pub fn syncfork(&self) -> isize {
         debug!("sys_syncfork: slot={}", self.slot_num);
         let cond = SyscallCondVar::new();
         self.send_request(
@@ -252,7 +269,7 @@ impl SCF {
         }
     }
 
-    pub fn stat(&mut self, path: *const u8) -> isize {
+    pub fn stat(&self, path: *const u8) -> isize {
         debug!("sys_stat: path={:#x}, slot={}", path as usize, self.slot_num);
         let cond = SyscallCondVar::new();
         self.send_request(
@@ -265,7 +282,7 @@ impl SCF {
         ret as _
     }
 
-    pub fn exec(&mut self, path: *const u8) -> Option<Vec<u8>> {
+    pub fn exec(&self, path: *const u8) -> Option<Vec<u8>> {
         debug!("sys_exec: path={:#x}, slot={}", path as usize, self.slot_num);
 
         // Use stat to aquire size of the file
@@ -299,7 +316,7 @@ impl SCF {
         Some(data)
     }
 
-    pub fn clone_(&mut self) -> isize {
+    pub fn clone_(&self) -> isize {
         debug!("sys_clone: slot={}", self.slot_num);
         let cond = SyscallCondVar::new();
         self.send_request(
@@ -311,8 +328,8 @@ impl SCF {
         ret as _
     }
 
-    pub fn exit(&mut self) -> isize {
-        debug!("sys_exit: slot={}", self.slot_num);
+    pub fn exit(&self) -> isize {
+        trace!("sys_exit: slot={}", self.slot_num);
         let cond = SyscallCondVar::new();
         self.send_request(
             ScfOpcode::Exit,
@@ -320,7 +337,6 @@ impl SCF {
             ScfRequestToken::from(&cond),
         );
         let ret = cond.wait();
-        get_queue(self.slot_num).reset(); // Or to reset in linux?
         ret as _
     }
 }
