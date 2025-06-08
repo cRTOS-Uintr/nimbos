@@ -26,6 +26,10 @@ mod sync;
 mod syscall;
 mod task;
 mod utils;
+#[cfg(feature = "uintr")]
+use crate::syscall::uintr::alloc_uintr_upid;
+#[cfg(feature = "uintr")]
+use crate::syscall::uintr::UintrUpid;
 
 #[cfg(feature = "platform-pc-rvm")]
 mod scf;
@@ -84,6 +88,15 @@ pub fn rust_main() -> ! {
 
     mm::init();
     drivers::init();
+
+    #[cfg(feature = "uintr")]
+    {
+        let upid_addr = alloc_uintr_upid().unwrap().as_ptr();
+        warn!("UINTR UPID address: {:?}", upid_addr);
+        let upid = unsafe { &mut *(upid_addr as *mut UintrUpid) };
+        upid.nc.ndst = 126;
+        upid.nc.nv = 41;
+    }
 
     #[cfg(feature = "rvm")]
     scf::init();

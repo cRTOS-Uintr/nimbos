@@ -283,6 +283,7 @@ impl MemorySet {
 
     #[cfg(feature = "rvm")]
     pub fn load_user_sync(&mut self, elf_data: &[u8], scf: &Option<SCF>) -> (VirtAddr, VirtAddr) {
+        trace!("Loading user ELF segments into memory set with SCF support");
         use xmas_elf::program::{SegmentData, Type};
         use xmas_elf::{header, ElfFile};
 
@@ -299,11 +300,13 @@ impl MemorySet {
         } else {
             panic!("Unsupported architecture!");
         };
+        trace!("ELF arch: {:?}", elf.header.pt2.machine().as_machine());
         assert_eq!(
             elf.header.pt2.machine().as_machine(),
             expect_arch,
             "invalid ELF arch"
         );
+        trace!("ELF entry point: {:#x?}", elf.header.pt2.entry_point());
 
         for ph in elf.program_iter() {
             if ph.get_type() != Ok(Type::Load) {
@@ -329,18 +332,23 @@ impl MemorySet {
                 flags,
             );
             area.write_data(offset, data);
+            trace!("Inserting ELF segment");
             self.insert_sync(area, scf);
+            trace!("ELF segment mapped");
             instructions::flush_icache_all();
         }
+        trace!("ELF segments loaded into memory set");
         // user stack
         self.insert_sync(MapArea::new_framed(
             VirtAddr::new(USER_STACK_BASE),
             USER_STACK_SIZE,
             MemFlags::READ | MemFlags::WRITE | MemFlags::USER | MemFlags::SYNC,
         ), scf);
+        trace!("User stack mapped");
 
         let entry = VirtAddr::new(elf.header.pt2.entry_point() as usize);
         let ustack_top = VirtAddr::new(USER_STACK_BASE + USER_STACK_SIZE);
+        trace!("ELF entry point: {:#x?}, user stack top: {:#x?}", entry, ustack_top);
         (entry, ustack_top)
     }
 

@@ -32,11 +32,11 @@ pub const EOPNOTSUPP: isize = 95;
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
 pub struct UintrNc {
-    status: u8, // bit 0: ON, bit 1: SN, bit 2-7: reserved
+    pub status: u8, // bit 0: ON, bit 1: SN, bit 2-7: reserved
     reserved1: u8, // Reserved
-    nv: u8, // Notification vector
+    pub nv: u8, // Notification vector
     reserved2: u8, // Reserved
-    ndst: u32, // Notification destination
+    pub ndst: u32, // Notification destination
 } // Notification control
 
 #[repr(C, align(64))]
@@ -123,6 +123,10 @@ impl UintrAllocator {
 static UPID_ALLOCATOR: Mutex<UintrAllocator> = Mutex::new(UintrAllocator {
     used_blocks: [false; MAX_BLOCKS],
 });
+
+pub fn get_upid_mem_start() -> usize {
+    UPID_MEM_START
+}
 
 // 公共接口
 pub fn alloc_uintr_upid() -> Option<NonNull<UintrUpid>> {
@@ -379,8 +383,8 @@ fn do_uintr_register_sender(uvec: usize, upid: *mut UintrUpid) -> isize {
     }
 
     uintr_init_sender();
-    trace!("Registering sender: uvec={:#x}, upid={:#x}", uvec, upid as usize);
-    debug!("UPID content: {:#?}", unsafe{*(upid as *const UintrUpid)});
+    warn!("Registering sender: uvec={:#x}, upid={:#x}", uvec, upid as usize);
+    warn!("UPID content: {:#?}", unsafe{*(upid as *const UintrUpid)});
     let current_task = CurrentTask::get().0;
     let ctx = unsafe{&mut *current_task.context().as_ptr()};
     let uitt_ctx = ctx.uitt.as_mut().unwrap();
@@ -392,7 +396,7 @@ fn do_uintr_register_sender(uvec: usize, upid: *mut UintrUpid) -> isize {
         uitt_entry.target_upid_addr = upid as u64;
         drop(uitt_entry);
         uitt_ctx.uitt_mask.set(entry);
-        debug!("UITT entry {} registered", entry);
+        warn!("UITT entry {} registered", entry);
     
         if !ctx.uitt_activated {
             drop(uitt_ctx);

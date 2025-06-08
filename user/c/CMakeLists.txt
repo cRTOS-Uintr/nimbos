@@ -5,7 +5,7 @@ enable_language(C ASM)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "")
 
 # Toolchain
-set(PREFIX ${ARCH}-linux-musl-)
+set(PREFIX)
 
 if (${ARCH} STREQUAL x86_64)
     set(CMAKE_C_FLAGS       "-mno-sse")

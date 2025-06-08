@@ -159,22 +159,32 @@ impl Task {
 
     #[cfg(feature = "rvm")]
     pub fn new_user_scf(path: &str) -> Arc<Self> {
+        // warn!("new_user_scf: creating task with path: {}", path);
         let mut t = Self::new_common(TaskId::alloc());
+        // warn!("new_user_scf: created task with id: {}", t.id.as_usize());
         // Must set SCF before setting memory set
         t.scf = Arc::new(Some(SCF::new(0)));
+        // warn!("new_user_scf: created SCF for task with id: {}", t.id.as_usize());
 
         let elf_data = loader::get_app_data_by_name(path).expect("new_user: no such app");
+        // warn!("new_user_scf: loading user data for task with id: {}", t.id.as_usize());
         let mut vm = MemorySet::new();
+        // warn!("new_user_scf: created new memory set for task with id: {}", t.id.as_usize());
         let (entry, ustack_top) = vm.load_user_sync(elf_data, &mut t.scf);
+        // warn!("new_user_scf: loaded user data for task with id: {}", t.id.as_usize());
 
         t.entry = EntryState::User(Box::new(TrapFrame::new_user(entry, ustack_top, 0)));
+        // warn!("new_user_scf: set entry for task with id: {}", t.id.as_usize());
         t.ctx
             .get_mut()
             .init(task_entry as _, t.kstack.top(), vm.page_table_root(), false);
+        // warn!("new_user_scf: initialized context for task with id: {}", t.id.as_usize());
         t.vm = Some(Arc::new(Mutex::new(vm)));
+        // warn!("new_user_scf: set memory set for task with id: {}", t.id.as_usize());
 
         let t = Arc::new(t);
         ROOT_TASK.add_child(&t);
+        // warn!("new_user_scf: added task with id: {} to root task", t.id.as_usize());
         t
     }
 
@@ -359,11 +369,13 @@ impl<'a> CurrentTask<'a> {
         assert!(!self.is_kernel_task());
         assert_eq!(Arc::strong_count(self.vm.as_ref().unwrap()), 1);
         if let Some(elf_data) = loader::get_app_data_by_name(path) {
+            trace!("scf_lexec: loading elf data for path: {}", path);
             let mut vm = self.vm.as_ref().unwrap().lock();
             vm.clear_sync(self.scf.as_ref());
             let (entry, ustack_top) = vm.load_user_sync(elf_data, self.scf.as_ref());
             *tf = TrapFrame::new_user(entry, ustack_top, 0);
             instructions::flush_tlb_all();
+            trace!("scf_lexec: loaded elf data for path: {}", path);
             0
         } else {
             -1

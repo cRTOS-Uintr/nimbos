@@ -20,6 +20,7 @@ pub fn is_init() -> bool {
 pub fn init() {
     println!("Initializing task manager...");
     manager::init();
+    debug!("Task manager initialized!");
 
     ROOT_TASK.init_by(Task::new_kernel(
         |_| loop {
@@ -36,6 +37,7 @@ pub fn init() {
         },
         0,
     ));
+    debug!("Root task initialized!");
 
     let test_kernel_task = |arg: usize| {
         println!(
@@ -45,17 +47,21 @@ pub fn init() {
         );
         0
     };
+    debug!("Test kernel task initialized!");
 
     let mut m = TASK_MANAGER.lock();
     m.spawn(ROOT_TASK.clone());
     m.spawn(Task::new_kernel(test_kernel_task, 0xdead));
     m.spawn(Task::new_kernel(test_kernel_task, 0xbeef));
+    debug!("Test kernel tasks spawned!");
 
     #[cfg(not(feature = "rvm"))]
     m.spawn(Task::new_user("user_shell"));
 
+    debug!("User shell task spawned!");
     #[cfg(feature = "rvm")]
     m.spawn(Task::new_user_scf("user_shell"));
+    debug!("User shell task spawned with SCF!");
 
     TASK_INITED.store(true, Ordering::SeqCst);
 }

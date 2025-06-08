@@ -2,6 +2,7 @@ use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use crate::task::manager::TASK_MANAGER;
 use alloc::vec::Vec;
 use core::arch::asm;
+#[cfg(feature = "uintr")]
 use crate::syscall::uintr::sys_uintr_register_sender;
 
 use super::queue::ScfRequestToken;
@@ -24,6 +25,7 @@ numeric_enum_macro::numeric_enum! {
         Fork = 57,
         Exit = 60,
         UintrInit = 100,
+        IPIInit = 101,
         SyncMap = 253,
         SyncUnmap = 254,
         Unknown = 0xff,
@@ -60,6 +62,7 @@ impl SyscallCondVar {
 
 // 发送用户中断
 #[inline(always)]
+#[cfg(feature = "uintr")]
 unsafe fn senduipi(uitte: usize) {
     asm!(
         "senduipi rax",
@@ -80,12 +83,23 @@ impl SCF {
                 drop(_manager);
                 self.init_uintr_scf();
             } else {
+                trace!("sending uipi: scf_uitte={:#x}", ctx.scf_uitte);
                 unsafe {senduipi(ctx.scf_uitte.try_into().unwrap())};
-            }
+            };
         }
         #[cfg(not(feature = "uintr"))]
         {
-            super::notify(self.irq_num());
+            let _manager = TASK_MANAGER.lock();
+            let current_task = CurrentTask::get().0;
+            let ctx = unsafe{&mut *current_task.context().as_ptr()};
+            drop(_manager);
+            if !ctx.scf_initialized {
+                self.init_ipi_scf();
+            } else {
+                // super::notify(self.irq_num());
+                trace!("sending normal ipi");
+                self.ipi_notify();
+            }
         }
     }
 
@@ -100,7 +114,8 @@ impl SCF {
         while !self.queue().send(opcode, args, token) {
             core::hint::spin_loop();
         }
-        super::notify(self.irq_num());
+        // super::notify(self.irq_num());
+        // self.ipi_notify();
     }
 
     pub fn write(&self, fd: isize, buf: *const u8, len: usize) -> isize {
@@ -133,6 +148,40 @@ impl SCF {
         ret as _
     }
 
+    #[cfg(not(feature = "uintr"))]
+    pub fn init_ipi_scf(&self) {
+        let cond = SyscallCondVar::new();
+        {
+            let _manager = TASK_MANAGER.lock();
+            let current_task = CurrentTask::get().0;
+            let ctx = unsafe{&mut *current_task.context().as_ptr()};
+            debug!("sys_init_ipi_scf: slot_num={}, initialized={}", self.slot_num, ctx.scf_initialized);
+        }
+    
+        while !self.queue().send(
+            ScfOpcode::IPIInit,
+            [0, 0, 0, 0],
+            ScfRequestToken::from(&cond),
+        ) {
+            CurrentTask::get().yield_now();
+        }
+        trace!("sys_init_ipi_scf: request sent, waiting for response...");
+        // super::notify(self.irq_num());
+        trace!("sys_init_ipi_scf: response received, processing...");
+        
+        let apic_data = cond.wait() as u64;
+        
+        let _manager = TASK_MANAGER.lock();
+        trace!("sys_init_ipi_scf: updating current task context...");
+        
+        let current_task = CurrentTask::get().0;
+        let ctx = unsafe{&mut *current_task.context().as_ptr()};
+        ctx.ipi_vector = (apic_data >> 32) as u32;
+        ctx.ipi_dest = apic_data as u32;
+        ctx.scf_initialized = true;
+        debug!("sys_init_ipi_scf: ipi_vector={:#x}, initialized={}", ctx.ipi_vector, ctx.scf_initialized);
+    }
+
     #[cfg(feature = "uintr")]
     pub fn init_uintr_scf(&self) {
         let cond = SyscallCondVar::new();
@@ -140,7 +189,7 @@ impl SCF {
             let _manager = TASK_MANAGER.lock();
             let current_task = CurrentTask::get().0;
             let ctx = unsafe{&mut *current_task.context().as_ptr()};
-            info!("sys_init_uintr_scf: slot_num={}, initialized={}", self.slot_num, ctx.scf_initialized);
+            debug!("sys_init_uintr_scf: slot_num={}, initialized={}", self.slot_num, ctx.scf_initialized);
         }
     
         while !self.queue().send(
@@ -150,7 +199,8 @@ impl SCF {
         ) {
             CurrentTask::get().yield_now();
         }
-        super::notify(self.irq_num());
+        trace!("sys_init_uintr_scf: request sent, waiting for response...");
+        // super::notify(self.irq_num());
         let upid_addr = cond.wait() + UPID_MEM_OFFSET as u64;
         let uitte = sys_uintr_register_sender(upid_addr, 0);
         
@@ -174,9 +224,9 @@ impl SCF {
             ScfRequestToken::from(&cond),
         );
         let mut ret = cond.wait() as usize;
-        warn!("sys_init_cross_uintr: upid got from linux={:#x}", ret);
+        trace!("sys_init_cross_uintr: upid got from linux={:#x}", ret);
         ret = ret + UPID_MEM_OFFSET;
-        warn!("sys_init_cross_uintr: upid_addr={:#x}", ret);
+        trace!("sys_init_cross_uintr: upid_addr={:#x}", ret);
         ret
     }
 
@@ -205,7 +255,7 @@ impl SCF {
     }
 
     pub fn syncmap(&self, vaddr: usize, len: usize, paddr: usize, prot: usize) -> isize {
-        debug!("sys_syncmap: vaddr={:#x}, len={:#x}, paddr={:#x}, prot={:#x}, slot={}", vaddr, len, paddr, prot, self.slot_num);
+        trace!("sys_syncmap: vaddr={:#x}, len={:#x}, paddr={:#x}, prot={:#x}, slot={}", vaddr, len, paddr, prot, self.slot_num);
         let cond = SyscallCondVar::new();
         self.send_request_kernel(
             ScfOpcode::SyncMap,
@@ -219,7 +269,7 @@ impl SCF {
             if response.is_some() {
                 let scf_response = response.unwrap();
                 let ret = scf_response.ret_val;
-                debug!("sys_syncmap: response received: ret={:#x}", ret);
+                trace!("sys_syncmap: response received: ret={:#x}", ret);
                 return ret as _;
             }
         }
@@ -247,7 +297,7 @@ impl SCF {
     }
 
     pub fn syncfork(&self) -> isize {
-        debug!("sys_syncfork: slot={}", self.slot_num);
+        trace!("sys_syncfork: slot={}", self.slot_num);
         let cond = SyscallCondVar::new();
         self.send_request(
             ScfOpcode::Fork,
@@ -255,16 +305,9 @@ impl SCF {
             ScfRequestToken::from(&cond),
         );
 
-        // Better waiting strategy?
-        loop {
-            let response = self.queue().pop_response();
-            if response.is_some() {
-                let scf_response = response.unwrap();
-                let ret = scf_response.ret_val;
-                debug!("sys_syncfork: response received: ret={}", ret);
-                return ret as _;
-            }
-        }
+        let ret = cond.wait();
+        trace!("sys_syncfork: response received: ret={}", ret);
+        ret as _
     }
 
     pub fn stat(&self, path: *const u8) -> isize {

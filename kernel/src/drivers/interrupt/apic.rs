@@ -40,14 +40,24 @@ pub fn send_ipi(irq_num: usize) {
     let entry = unsafe { io_apic.table_entry(irq_num as _) };
     let vector = entry.vector();
     let dest = entry.dest();
+    // unsafe {
+    //     let ptr = &mut entry as *mut RedirectionTableEntry;
+    //     dest = (((*(ptr as *mut u64)) >> 48) % 0x100) as u8;
+    // }
     if vector >= 0x20 {
-        debug!("send_ipi {} {}", vector, dest);
-
+        warn!("send_ipi {} {}", vector, dest);
+    }
+    else {
+        warn!("send_ipi anyway: invalid vector {} dest {}", vector, dest);
+    }
         #[cfg(feature = "uintr")]
         unsafe { LOCAL_APIC.as_mut().send_ipi(vector, (dest as u32) << APIC_LDR_OFFSET) };
         #[cfg(not(feature = "uintr"))]
         unsafe { LOCAL_APIC.as_mut().send_ipi(vector, dest as _) };
-    }
+}
+
+pub fn send_ipi_raw(vector: u8, dest: usize) {
+    unsafe { LOCAL_APIC.as_mut().send_ipi(vector, dest as _) };
 }
 
 pub fn init() {
@@ -65,20 +75,24 @@ pub fn init() {
         .ipi_destination_mode(x2apic::lapic::IpiDestMode::Logical) // Use logical for now
         .build()
         .unwrap();
+    trace!("APIC init 1");
     unsafe {
         lapic.enable();
         // APIC may be software disabled when enable the timer at the first time, we need to re-enable it.
         lapic.enable_timer();
     }
+    trace!("APIC init 2");
     LOCAL_APIC.init_by(PerCpuData::new(lapic));
-    #[cfg(feature = "uintr")]
-    unsafe {
-        LOCAL_APIC.as_mut().set_logical_id(get_logical_dest());
-    }
+    // #[cfg(feature = "uintr")]
+    // unsafe {
+    //     LOCAL_APIC.as_mut().set_logical_id(get_logical_dest());
+    // }
+    trace!("APIC init 3");
     super::register_handler(APIC_TIMER_VECTOR, || {
         crate::drivers::timer::timer_tick();
         IrqHandlerResult::Reschedule
     });
+    trace!("APIC init 4");
 }
 
 pub fn init_local_apic_ap() {

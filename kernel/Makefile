@@ -2,7 +2,7 @@
 ARCH ?= x86_64
 MODE ?= release
 LOG ?= warn
-RVM ?= off
+RVM ?= on
 ACCEL ?= on
 UINTR ?= on
 
@@ -113,7 +113,7 @@ clippy:
 	cargo clippy $(build_args)
 
 disasm:
-	@$(OBJDUMP) $(kernel_elf) | less
+	@$(OBJDUMP) $(kernel_elf) > xxx.asm
 
 run: user build justrun
 

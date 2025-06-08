@@ -10,7 +10,7 @@ cfg_if! {
     }
 }
 
-pub use self::imp::{handle_irq, init, send_ipi, set_enable, IRQ_COUNT};
+pub use self::imp::{handle_irq, init, send_ipi, send_ipi_raw, set_enable, IRQ_COUNT};
 
 use core::cell::UnsafeCell;
 

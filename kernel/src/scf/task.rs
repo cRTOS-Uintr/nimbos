@@ -28,11 +28,13 @@ pub fn sys_clone(newsp: usize, tf: &TrapFrame) -> isize {
 }
 
 pub fn sys_fork(tf: &TrapFrame) -> isize {
+    debug!("sys_fork: task_id: {}", CurrentTask::get().pid().as_usize());
     let new_irq_num = CurrentTask::get().scf_syncfork();
     assert!(new_irq_num > 0);
     let new_task = CurrentTask::get().new_fork_scf(tf, new_irq_num as _);
     let pid = new_task.pid().as_usize() as isize;
     spawn_task(new_task);
+    trace!("sys_fork: new task_id: {}", pid);
     pid
 }
 

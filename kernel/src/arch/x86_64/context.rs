@@ -161,6 +161,10 @@ pub struct TaskContext {
     pub scf_initialized: bool,
     #[cfg(feature = "rvm")]
     pub scf_uitte: isize,
+    #[cfg(feature = "rvm")]
+    pub ipi_vector: u32,
+    #[cfg(feature = "rvm")]
+    pub ipi_dest: u32,
 }
 
 impl TaskContext {
@@ -179,6 +183,8 @@ impl TaskContext {
             uintr_upid_ctx: None,
             scf_initialized: false,
             scf_uitte: -1,
+            ipi_vector: 0,
+            ipi_dest: 0,
         }
     }
 

@@ -130,6 +130,7 @@ impl<PTE: GenericPTE> PageTableImpl<PTE> {
             self.map(VirtAddr::new(vaddr), paddr, area.flags);
             vaddr += PAGE_SIZE;
         }
+        // error!("map_area_sync end");
     }
     
     pub fn unmap_area(&mut self, area: &mut MapArea) {
